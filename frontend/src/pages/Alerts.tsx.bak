@@ -1,0 +1,387 @@
+import React, { useState } from 'react';
+import {
+  Box,
+  Typography,
+  Grid,
+  Card,
+  CardContent,
+  Button,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
+  Chip,
+  IconButton,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  TextField,
+  FormControl,
+  InputLabel,
+  Select,
+  MenuItem,
+  Tabs,
+  Tab,
+  List,
+  ListItem,
+  ListItemText,
+  ListItemSecondaryAction,
+} from '@mui/material';
+import {
+  Add as AddIcon,
+  CheckCircle as ResolveIcon,
+  Cancel as DismissIcon,
+  Warning as WarningIcon,
+  Error as ErrorIcon,
+  Info as InfoIcon,
+} from '@mui/icons-material';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiService } from '../services/apiService';
+import { format, parseISO } from 'date-fns';
+
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+
+  return (
+    <div
+      role="tabpanel"
+      hidden={value !== index}
+      id={`alerts-tabpanel-${index}`}
+      aria-labelledby={`alerts-tab-${index}`}
+      {...other}
+    >
+      {value === index && <Box>{children}</Box>}
+    </div>
+  );
+}
+
+const Alerts: React.FC = () => {
+  const [tabValue, setTabValue] = useState(0);
+  const [openRuleDialog, setOpenRuleDialog] = useState(false);
+  const [alertStatus, setAlertStatus] = useState('');
+  const [newRule, setNewRule] = useState({
+    name: '',
+    description: '',
+    conditions: {},
+    actions: {},
+  });
+
+  const queryClient = useQueryClient();
+
+  const { data: alerts } = useQuery({
+    queryKey: ['alerts', alertStatus],
+    queryFn: () => apiService.getAlerts(alertStatus || undefined),
+  });
+
+  const { data: alertRules } = useQuery({
+    queryKey: ['alert-rules'],
+    queryFn: apiService.getAlertRules,
+  });
+
+  const updateAlertMutation = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: string }) =>
+      apiService.updateAlertStatus(id, status),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['alerts'] });
+    },
+  });
+
+  const createRuleMutation = useMutation({
+    mutationFn: apiService.createAlertRule,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['alert-rules'] });
+      setOpenRuleDialog(false);
+      setNewRule({ name: '', description: '', conditions: {}, actions: {} });
+    },
+  });
+
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+
+  const getSeverityIcon = (severity: string) => {
+    switch (severity) {
+      case 'critical': return <ErrorIcon color="error" />;
+      case 'high': return <ErrorIcon color="warning" />;
+      case 'medium': return <WarningIcon color="warning" />;
+      case 'low': return <InfoIcon color="info" />;
+      default: return <InfoIcon />;
+    }
+  };
+
+  const getSeverityColor = (severity: string) => {
+    switch (severity) {
+      case 'critical': return 'error';
+      case 'high': return 'error';
+      case 'medium': return 'warning';
+      case 'low': return 'info';
+      default: return 'default';
+    }
+  };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return 'error';
+      case 'resolved': return 'success';
+      case 'dismissed': return 'default';
+      default: return 'default';
+    }
+  };
+
+  const handleCreateRule = () => {
+    createRuleMutation.mutate(newRule);
+  };
+
+  return (
+    <Box>
+      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+        <Typography variant="h4">
+          Alerts & Notifications
+        </Typography>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          onClick={() => setOpenRuleDialog(true)}
+        >
+          Create Alert Rule
+        </Button>
+      </Box>
+
+      <Paper sx={{ width: '100%' }}>
+        <Tabs value={tabValue} onChange={handleTabChange} sx={{ borderBottom: 1, borderColor: 'divider' }}>
+          <Tab label="Active Alerts" />
+          <Tab label="Alert Rules" />
+          <Tab label="Alert History" />
+        </Tabs>
+
+        <TabPanel value={tabValue} index={0}>
+          <Box p={3}>
+            <Grid container spacing={3}>
+              <Grid item xs={12}>
+                <FormControl size="small" sx={{ minWidth: 120, mb: 2 }}>
+                  <InputLabel>Status Filter</InputLabel>
+                  <Select
+                    value={alertStatus}
+                    label="Status Filter"
+                    onChange={(e) => setAlertStatus(e.target.value)}
+                  >
+                    <MenuItem value="">All</MenuItem>
+                    <MenuItem value="active">Active</MenuItem>
+                    <MenuItem value="resolved">Resolved</MenuItem>
+                    <MenuItem value="dismissed">Dismissed</MenuItem>
+                  </Select>
+                </FormControl>
+
+                <TableContainer>
+                  <Table>
+                    <TableHead>
+                      <TableRow>
+                        <TableCell>Alert</TableCell>
+                        <TableCell>Severity</TableCell>
+                        <TableCell>Status</TableCell>
+                        <TableCell>Triggered</TableCell>
+                        <TableCell>Actions</TableCell>
+                      </TableRow>
+                    </TableHead>
+                    <TableBody>
+                      {alerts?.alerts?.map((alert: any) => (
+                        <TableRow key={alert.id}>
+                          <TableCell>
+                            <Box display="flex" alignItems="center" gap={1}>
+                              {getSeverityIcon(alert.severity)}
+                              <Box>
+                                <Typography variant="subtitle2">
+                                  {alert.title}
+                                </Typography>
+                                <Typography variant="body2" color="text.secondary">
+                                  {alert.description}
+                                </Typography>
+                              </Box>
+                            </Box>
+                          </TableCell>
+                          <TableCell>
+                            <Chip 
+                              label={alert.severity}
+                              color={getSeverityColor(alert.severity) as any}
+                              size="small"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            <Chip 
+                              label={alert.status}
+                              color={getStatusColor(alert.status) as any}
+                              size="small"
+                            />
+                          </TableCell>
+                          <TableCell>
+                            {format(parseISO(alert.triggered_at), 'MMM dd, HH:mm')}
+                          </TableCell>
+                          <TableCell>
+                            {alert.status === 'active' && (
+                              <Box display="flex" gap={1}>
+                                <IconButton 
+                                  size="small" 
+                                  color="success"
+                                  onClick={() => updateAlertMutation.mutate({ 
+                                    id: alert.id, 
+                                    status: 'resolved' 
+                                  })}
+                                >
+                                  <ResolveIcon />
+                                </IconButton>
+                                <IconButton 
+                                  size="small"
+                                  onClick={() => updateAlertMutation.mutate({ 
+                                    id: alert.id, 
+                                    status: 'dismissed' 
+                                  })}
+                                >
+                                  <DismissIcon />
+                                </IconButton>
+                              </Box>
+                            )}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {(!alerts?.alerts || alerts.alerts.length === 0) && (
+                        <TableRow>
+                          <TableCell colSpan={5} align="center">
+                            No alerts found
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </TableContainer>
+              </Grid>
+            </Grid>
+          </Box>
+        </TabPanel>
+
+        <TabPanel value={tabValue} index={1}>
+          <Box p={3}>
+            <List>
+              {alertRules?.map((rule: any) => (
+                <ListItem key={rule.id} divider>
+                  <ListItemText
+                    primary={rule.name}
+                    secondary={
+                      <Box>
+                        <Typography variant="body2" color="text.secondary">
+                          {rule.description}
+                        </Typography>
+                        <Chip 
+                          label={rule.is_active ? 'Active' : 'Inactive'}
+                          color={rule.is_active ? 'success' : 'default'}
+                          size="small"
+                          sx={{ mt: 1 }}
+                        />
+                      </Box>
+                    }
+                  />
+                  <ListItemSecondaryAction>
+                    <Typography variant="caption" color="text.secondary">
+                      Created: {format(parseISO(rule.created_at), 'MMM dd, yyyy')}
+                    </Typography>
+                  </ListItemSecondaryAction>
+                </ListItem>
+              ))}
+              {(!alertRules || alertRules.length === 0) && (
+                <ListItem>
+                  <ListItemText primary="No alert rules configured" />
+                </ListItem>
+              )}
+            </List>
+          </Box>
+        </TabPanel>
+
+        <TabPanel value={tabValue} index={2}>
+          <Box p={3}>
+            <Typography variant="h6" gutterBottom>
+              Alert History
+            </Typography>
+            <Typography variant="body2" color="text.secondary">
+              Historical alert data and analytics will be displayed here
+            </Typography>
+          </Box>
+        </TabPanel>
+      </Paper>
+
+      {/* Create Alert Rule Dialog */}
+      <Dialog open={openRuleDialog} onClose={() => setOpenRuleDialog(false)} maxWidth="md" fullWidth>
+        <DialogTitle>Create Alert Rule</DialogTitle>
+        <DialogContent>
+          <Box display="flex" flexDirection="column" gap={2} pt={1}>
+            <TextField
+              label="Rule Name"
+              value={newRule.name}
+              onChange={(e) => setNewRule({ ...newRule, name: e.target.value })}
+              fullWidth
+            />
+            <TextField
+              label="Description"
+              value={newRule.description}
+              onChange={(e) => setNewRule({ ...newRule, description: e.target.value })}
+              multiline
+              rows={3}
+              fullWidth
+            />
+            <Typography variant="subtitle2" sx={{ mt: 2 }}>
+              Alert Conditions
+            </Typography>
+            <Grid container spacing={2}>
+              <Grid item xs={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Metric</InputLabel>
+                  <Select label="Metric">
+                    <MenuItem value="revenue">Revenue</MenuItem>
+                    <MenuItem value="orders">Orders</MenuItem>
+                    <MenuItem value="customers">Customers</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+              <Grid item xs={6}>
+                <FormControl fullWidth>
+                  <InputLabel>Condition</InputLabel>
+                  <Select label="Condition">
+                    <MenuItem value="greater_than">Greater than</MenuItem>
+                    <MenuItem value="less_than">Less than</MenuItem>
+                    <MenuItem value="equals">Equals</MenuItem>
+                    <MenuItem value="percentage_change">Percentage change</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+            <TextField
+              label="Threshold Value"
+              type="number"
+              fullWidth
+            />
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setOpenRuleDialog(false)}>Cancel</Button>
+          <Button 
+            onClick={handleCreateRule} 
+            variant="contained"
+            disabled={!newRule.name || createRuleMutation.isPending}
+          >
+            Create Rule
+          </Button>
+        </DialogActions>
+      </Dialog>
+    </Box>
+  );
+};
+
+export default Alerts;
